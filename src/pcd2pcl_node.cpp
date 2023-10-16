@@ -8,15 +8,19 @@ Pcd2Pcl::Pcd2Pcl() : Node("pcd_to_pcl_node")
     void setparam();
     map_cloud_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("map_cloud",10);
     pub_flag = true;
-    
+    down_sampling_flag=true;
 }
 void Pcd2Pcl::setparam()
 {
     this->declare_parameter("map_path","map_path.pcd");
     this->declare_parameter("frame_id","map");
+    this->declare_parameter("use_downsampling",true);
+    this->declare_parameter("voxel_leafsize",1.0);
 
     this->get_parameter("map_path",map_path);
     this->get_parameter("frame_id",frame_id);
+    this->get_parameter("use_downsampling",down_sampling_flag);
+    this->get_parameter("voxel_leafsize",leaf_size);
 }
 void Pcd2Pcl::load_pcd_map(std::string path ,pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_pcd)
 {
@@ -43,6 +47,7 @@ void Pcd2Pcl::convert_pcd_to_pcl(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_pcd,
 void Pcd2Pcl::loop()
 {
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_pcd(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr down_cloud_pcd(new pcl::PointCloud<pcl::PointXYZI>);
     sensor_msgs::msg::PointCloud2::SharedPtr map_cloud_ptr(new sensor_msgs::msg::PointCloud2);
     // if(pub_flag)
     // {
@@ -50,14 +55,31 @@ void Pcd2Pcl::loop()
         // load_pcd_map(map_path, map_pcd);
         // convert_pcd_to_pcl(map_pcd,map_cloud);
         pcl::io::loadPCDFile(map_path,*cloud_pcd);
-        // convert_pcd_to_pcl(map_pcd,map_cloud);
-        pcl::toROSMsg(*cloud_pcd,*map_cloud_ptr);
-        rclcpp::Time current_stamp = rclcpp::Clock(RCL_ROS_TIME).now();
-        // msg->header.stamp = ros_clock.now();
-        map_cloud_ptr->header.stamp = current_stamp;
-        map_cloud_ptr->header.frame_id = frame_id;
-        map_cloud_pub->publish(*map_cloud_ptr);
-        
+        RCLCPP_INFO(get_logger(), "Initial point cloud data points: %lu", cloud_pcd->points.size());
+        if(down_sampling_flag)
+        {
+            pcl::VoxelGrid<pcl::PointXYZI> voxelGrid;
+            voxelGrid.setInputCloud(cloud_pcd);
+            voxelGrid.setLeafSize(leaf_size,leaf_size,leaf_size);
+            voxelGrid.filter(*down_cloud_pcd);
+            RCLCPP_INFO(get_logger(), "down sampling point cloud data points: %lu", down_cloud_pcd->points.size());
+            pcl::toROSMsg(*down_cloud_pcd,*map_cloud_ptr);
+            rclcpp::Time current_stamp = rclcpp::Clock(RCL_ROS_TIME).now();
+            // msg->header.stamp = ros_clock.now();
+            map_cloud_ptr->header.stamp = current_stamp;
+            map_cloud_ptr->header.frame_id = frame_id;
+            map_cloud_pub->publish(*map_cloud_ptr);
+        }
+        else
+        {
+            // convert_pcd_to_pcl(map_pcd,map_cloud);
+            pcl::toROSMsg(*cloud_pcd,*map_cloud_ptr);
+            rclcpp::Time current_stamp = rclcpp::Clock(RCL_ROS_TIME).now();
+            // msg->header.stamp = ros_clock.now();
+            map_cloud_ptr->header.stamp = current_stamp;
+            map_cloud_ptr->header.frame_id = frame_id;
+            map_cloud_pub->publish(*map_cloud_ptr);
+        }
         pub_flag = false;
     // }
 }
